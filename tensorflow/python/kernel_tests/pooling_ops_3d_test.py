@@ -65,7 +65,7 @@ class PoolingTest(test.TestCase):
     # Initializes the input tensor with array containing incrementing
     # numbers from 1.
     x = [f * 1.0 for f in range(1, total_size + 1)]
-    with self.test_session(use_gpu=use_gpu) as sess:
+    with self.cached_session(use_gpu=use_gpu) as sess:
       t = constant_op.constant(x, shape=input_sizes)
       window = [1] + list(window) + [1]
       strides = [1] + list(strides) + [1]
@@ -233,7 +233,7 @@ class PoolingTest(test.TestCase):
     # Initializes the input tensor with array containing incrementing
     # numbers from 1.
     x = np.arange(1, total_size + 1, dtype=np.float32)
-    with self.test_session(use_gpu=use_gpu):
+    with self.cached_session(use_gpu=use_gpu):
       input_tensor = constant_op.constant(x, shape=input_sizes, name="input")
       err_g_margin = 1e-3
       err_gg_margin = 1.5e-2
@@ -321,6 +321,15 @@ class PoolingTest(test.TestCase):
         strides=(1, 1, 1),
         padding="VALID")
 
+  def testMaxPoolGradValidPadding1_2_3d(self):
+    self._ConstructAndTestGradient(
+        nn_ops.max_pool3d,
+        input_sizes=[1, 3, 3, 3, 1],
+        output_sizes=[1, 2, 2, 2, 1],
+        window=(1, 1, 1),
+        strides=(2, 2, 2),
+        padding="VALID")
+
   def testMaxPoolGradValidPadding2_2_3d(self):
     self._ConstructAndTestGradient(
         nn_ops.max_pool3d,
@@ -337,6 +346,15 @@ class PoolingTest(test.TestCase):
         output_sizes=[1, 3, 2, 4, 1],
         window=(1, 1, 1),
         strides=(1, 1, 1),
+        padding="SAME")
+
+  def testMaxPoolGradSamePadding1_2_3d(self):
+    self._ConstructAndTestGradient(
+        nn_ops.max_pool3d,
+        input_sizes=[1, 3, 2, 4, 1],
+        output_sizes=[1, 2, 1, 2, 1],
+        window=(1, 1, 1),
+        strides=(2, 2, 2),
         padding="SAME")
 
   def testMaxPoolGradSamePadding2_1_3d(self):
@@ -375,6 +393,15 @@ class PoolingTest(test.TestCase):
         strides=(1, 1, 1),
         padding="VALID")
 
+  def testAvgPoolGradValidPadding1_2_3d(self):
+    self._ConstructAndTestGradient(
+        nn_ops.avg_pool3d,
+        input_sizes=[1, 3, 3, 3, 1],
+        output_sizes=[1, 2, 2, 2, 1],
+        window=(1, 1, 1),
+        strides=(2, 2, 2),
+        padding="VALID")
+
   def testAvgPoolGradValidPadding2_1_3d(self):
     self._ConstructAndTestGradient(
         nn_ops.avg_pool3d,
@@ -400,6 +427,15 @@ class PoolingTest(test.TestCase):
         output_sizes=[1, 3, 2, 4, 2],
         window=(1, 1, 1),
         strides=(1, 1, 1),
+        padding="SAME")
+
+  def testAvgPoolGradSamePadding1_2_3d(self):
+    self._ConstructAndTestGradient(
+        nn_ops.avg_pool3d,
+        input_sizes=[1, 3, 2, 4, 2],
+        output_sizes=[1, 2, 1, 2, 2],
+        window=(1, 1, 1),
+        strides=(2, 2, 2),
         padding="SAME")
 
   def testAvgPoolGradSamePadding2_1_3d(self):

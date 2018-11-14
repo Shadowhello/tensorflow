@@ -24,8 +24,7 @@ limitations under the License.
 #include "tensorflow/stream_executor/lib/threadpool.h"
 #include "tensorflow/stream_executor/stream_executor_internal.h"
 
-namespace perftools {
-namespace gputools {
+namespace stream_executor {
 namespace host {
 
 class HostStream : public internal::StreamInterface {
@@ -35,8 +34,8 @@ class HostStream : public internal::StreamInterface {
 
   bool EnqueueTask(std::function<void()> task);
 
-  void *CudaStreamHack() override { return nullptr; }
-  void **CudaStreamMemberHack() override { return nullptr; }
+  void *GpuStreamHack() override { return nullptr; }
+  void **GpuStreamMemberHack() override { return nullptr; }
 
   void BlockUntilDone();
 
@@ -48,11 +47,10 @@ class HostStream : public internal::StreamInterface {
 
   mutex mu_;
   int pending_tasks_ GUARDED_BY(mu_) = 0;
-  ConditionVariableForMutex completion_condition_;
+  condition_variable completion_condition_;
 };
 
 }  // namespace host
-}  // namespace gputools
-}  // namespace perftools
+}  // namespace stream_executor
 
 #endif  // TENSORFLOW_STREAM_EXECUTOR_HOST_HOST_STREAM_H_

@@ -14,7 +14,6 @@ limitations under the License.
 ==============================================================================*/
 
 #include "tensorflow/core/platform/default/logging.h"
-#include "tensorflow/core/lib/core/stringpiece.h"
 #include "tensorflow/core/platform/env_time.h"
 #include "tensorflow/core/platform/macros.h"
 
@@ -22,14 +21,11 @@ limitations under the License.
 #include <android/log.h>
 #include <iostream>
 #include <sstream>
+#include <cstring>
 #endif
 
 #include <stdlib.h>
-#include <string.h>
 #include <time.h>
-
-#include <string>
-#include <unordered_map>
 
 namespace tensorflow {
 namespace internal {
@@ -96,7 +92,6 @@ void LogMessage::GenerateLogMessage() {
 }
 #endif
 
-
 namespace {
 
 // Parse log level (int64) from environment variable (char*)
@@ -119,6 +114,8 @@ int64 LogLevelStrToInt(const char* tf_env_var_val) {
   return level;
 }
 
+}  // namespace
+
 int64 MinLogLevelFromEnv() {
   const char* tf_env_var_val = getenv("TF_CPP_MIN_LOG_LEVEL");
   return LogLevelStrToInt(tf_env_var_val);
@@ -129,50 +126,6 @@ int64 MinVLogLevelFromEnv() {
   return LogLevelStrToInt(tf_env_var_val);
 }
 
-using VmoduleMap = std::unordered_map<StringPiece, int, StringPiece::Hasher>;
-
-// Returns a mapping from module name to VLOG level, derived from the
-// TF_CPP_VMOUDLE environment variable; ownership is transferred to the caller.
-VmoduleMap* VmoduleRecordsFromEnv() {
-  // The value of the env var is supposed to be of the form:
-  //    "foo=1,bar=2,baz=3"
-  const char* tf_env_var_val = getenv("TF_CPP_VMODULE");
-  auto* result = new VmoduleMap();
-  if (tf_env_var_val == nullptr) return result;
-  while (true) {
-    const char* eq = strchr(tf_env_var_val, '=');
-    if (eq == nullptr) break;
-    const char* after_eq = eq + 1;
-
-    // Comma either points at the next comma delimiter, or at a null terminator.
-    // We check that the integer we parse ends at this delimiter.
-    const char* comma = strchr(after_eq, ',');
-    const char* new_tf_env_var_val;
-    if (comma == nullptr) {
-      comma = strchr(after_eq, '\0');
-      new_tf_env_var_val = comma;
-    } else {
-      new_tf_env_var_val = comma + 1;
-    }
-
-    char* endptr = nullptr;
-    int level = strtol(after_eq, &endptr, 10);
-    if (endptr != comma) {
-      fprintf(stderr,
-              "warning: could not parse integer in vmodule specification in "
-              "\"%s\".\n",
-              after_eq);
-      break;
-    }
-    StringPiece module(tf_env_var_val, eq - tf_env_var_val);
-    tf_env_var_val = new_tf_env_var_val;
-    (*result)[module] = level;
-  }
-  return result;
-}
-
-}  // namespace
-
 LogMessage::~LogMessage() {
   // Read the min log level once during the first call to logging.
   static int64 min_log_level = MinLogLevelFromEnv();
@@ -180,21 +133,16 @@ LogMessage::~LogMessage() {
 }
 
 int64 LogMessage::MinVLogLevel() {
+  // We don't want to print logs during fuzzing as that would slow fuzzing down
+  // by almost 2x. So, if we are in fuzzing mode (not just running a test), we
+  // return maximum value so that nothing is actually printed
+  // See also http://llvm.org/docs/LibFuzzer.html#fuzzer-friendly-build-mode
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+  return tensorflow::NUM_SEVERITIES;
+#else
   static int64 min_vlog_level = MinVLogLevelFromEnv();
   return min_vlog_level;
-}
-
-bool LogMessage::VmoduleActivated(const char* fname, int lvl) {
-  static VmoduleMap* vmodule_records = VmoduleRecordsFromEnv();
-  const char* last_slash = strrchr(fname, '/');
-  const char* module_start = last_slash == nullptr ? fname : last_slash + 1;
-  const char* dot_after = strchr(module_start, '.');
-  const char* module_limit =
-      dot_after == nullptr ? strchr(fname, '\0') : dot_after;
-  StringPiece module(module_start, module_limit - module_start);
-  auto it = vmodule_records->find(module);
-  if (it == vmodule_records->end()) return false;
-  return it->second >= lvl;
+#endif
 }
 
 LogMessageFatal::LogMessageFatal(const char* file, int line)

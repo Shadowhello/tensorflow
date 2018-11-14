@@ -14,8 +14,8 @@ limitations under the License.
 ==============================================================================*/
 
 #include "tensorflow/core/distributed_runtime/rpc/grpc_tensor_coding.h"
-#include "grpc++/support/byte_buffer.h"
-#include "grpc++/support/slice.h"
+#include "grpcpp/support/byte_buffer.h"
+#include "grpcpp/support/slice.h"
 #include "tensorflow/core/common_runtime/dma_helper.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor.pb.h"
@@ -26,6 +26,8 @@ limitations under the License.
 #include "tensorflow/core/platform/env.h"
 #include "tensorflow/core/protobuf/worker.pb.h"
 
+// (Omitted internal-only flag)
+
 namespace tensorflow {
 namespace grpc {
 
@@ -34,7 +36,8 @@ void EncodeRecvTensorResponseToByteBuffer(const RecvTensorResponse& proto,
   ::grpc::Slice slice(proto.ByteSizeLong());
   proto.SerializeWithCachedSizesToArray(
       const_cast<uint8*>(reinterpret_cast<const uint8*>(slice.begin())));
-  *result = ::grpc::ByteBuffer(&slice, 1);
+  ::grpc::ByteBuffer tmp(&slice, 1);
+  result->Swap(&tmp);
 }
 
 // We generate a RecvTensorResponse protocol buffer encoding into "*result",
@@ -167,15 +170,20 @@ void EncodeTensorToByteBuffer(bool is_dead, const Tensor& val,
         (header.size() +
          VarLengthEncodingSize(RecvTensorResponse::kTensorFieldNumber,
                                overall_tensor_proto_bytesize));
-    // If "tensor_data_is_large == false", we copy the tensor data to the
-    // end of the buffer we are preparing that holds the rest of the
+    // If "share_tensor_slice_memory == false", we copy the tensor data to
+    // the end of the buffer we are preparing that holds the rest of the
     // RecvTensorResponse protocol buffer.
     //
-    // If "tensor_data_is_large == true", we arrange to share the backing
-    // store of the data by creating a slice that also points to the
+    // If "share_tensor_slice_memory == true", we arrange to share the
+    // backing store of the data by creating a slice that also points to the
     // backing store, with appropriate reference counts to keep the
     // backing store alive as needed.
-    bool tensor_data_is_large = (tdata.size() > kLargeTensorBytes);
+    //
+    // We enable this behavior if the tensor is large.
+    bool share_tensor_slice_memory = (tdata.size() > kLargeTensorBytes);
+
+    // (Omitted internal-only conditional)
+
     size_t encoder_size = expected_size - tdata.size();
 
     // Encode all but the actual "tdata", but including the tag and
@@ -200,10 +208,11 @@ void EncodeTensorToByteBuffer(bool is_dead, const Tensor& val,
     ::grpc::Slice slices[2];
     int num_slices = 0;
     {
-      size_t slice_len = e.size() + (tensor_data_is_large ? 0 : tdata.size());
+      size_t slice_len =
+          e.size() + (share_tensor_slice_memory ? 0 : tdata.size());
       slices[0] = ::grpc::Slice(slice_len);
       memcpy(const_cast<uint8_t*>(slices[0].begin()), e.data(), e.size());
-      if (!tensor_data_is_large) {
+      if (!share_tensor_slice_memory) {
         // (E)
         memcpy(const_cast<uint8_t*>(slices[0].begin()) + e.size(), tdata.data(),
                tdata.size());
@@ -211,24 +220,15 @@ void EncodeTensorToByteBuffer(bool is_dead, const Tensor& val,
       num_slices += 1;
     }
 
-    if (tensor_data_is_large) {
+    if (share_tensor_slice_memory) {
       // (E) Encode tensor data, but by sharing backing store
-
-      // TODO(vpai): Use the pure C++ ::grpc::Slice constructor that uses
-      // grpc_slice_new_with_user_data once TensorFlow pins a version of gRPC
-      // that includes https://github.com/grpc/grpc/pull/12065
-
       const TensorBuffer* buf = DMAHelper::buffer(&val);
       buf->Ref();
       slices[1] = ::grpc::Slice(
-          grpc_slice_new_with_user_data(
-              const_cast<void*>(static_cast<const void*>(tdata.data())),
-              tdata.size(),
-              [](void* backing) {
-                static_cast<TensorBuffer*>(backing)->Unref();
-              },
-              const_cast<TensorBuffer*>(buf)),
-          ::grpc::Slice::STEAL_REF);
+          const_cast<void*>(static_cast<const void*>(tdata.data())),
+          tdata.size(),
+          [](void* backing) { static_cast<TensorBuffer*>(backing)->Unref(); },
+          const_cast<TensorBuffer*>(buf));
       num_slices += 1;
     }
     size_t total_bytes = 0;
@@ -237,7 +237,8 @@ void EncodeTensorToByteBuffer(bool is_dead, const Tensor& val,
     }
     CHECK_EQ(total_bytes, expected_size);
 
-    *result = ::grpc::ByteBuffer(&slices[0], num_slices);
+    ::grpc::ByteBuffer tmp(&slices[0], num_slices);
+    result->Swap(&tmp);
   }
 }
 

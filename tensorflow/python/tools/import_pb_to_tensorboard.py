@@ -29,6 +29,16 @@ from tensorflow.python.platform import app
 from tensorflow.python.platform import gfile
 from tensorflow.python.summary import summary
 
+# Try importing TensorRT ops if available
+# TODO(aaroey): ideally we should import everything from contrib, but currently
+# tensorrt module would cause build errors when being imported in
+# tensorflow/contrib/__init__.py. Fix it.
+# pylint: disable=unused-import,g-import-not-at-top,wildcard-import
+try:
+  from tensorflow.contrib.tensorrt.ops.gen_trt_engine_op import *
+except ImportError:
+  pass
+# pylint: enable=unused-import,g-import-not-at-top,wildcard-import
 
 def import_to_tensorboard(model_dir, log_dir):
   """View an imported protobuf model (`.pb` file) as a graph in Tensorboard.
@@ -51,7 +61,7 @@ def import_to_tensorboard(model_dir, log_dir):
     pb_visual_writer = summary.FileWriter(log_dir)
     pb_visual_writer.add_graph(sess.graph)
     print("Model Imported. Visualize by running: "
-          "> tensorboard --logdir={}".format(log_dir))
+          "tensorboard --logdir={}".format(log_dir))
 
 
 def main(unused_args):
